@@ -63,14 +63,14 @@ mod amm {
                 let delta_x = TokenAmount::from_decimal_up(
                     (Percentage::from_integer(1) - self.fee).big_mul_up(amount),
                 );
-                let withdraw_amount = (delta_x * self.y).big_div(self.x);
+                let withdraw_amount = delta_x.big_mul_up(self.y).big_div(self.x);
                 self.y -= withdraw_amount;
             } else {
                 self.y += amount;
                 let delta_y = TokenAmount::from_decimal_up(
                     (Percentage::from_integer(1) - self.fee).big_mul_up(amount),
                 );
-                let withdraw_amount = (delta_y * self.x).big_div(self.y);
+                let withdraw_amount = delta_y.big_mul_up(self.x).big_div(self.y);
                 self.x -= withdraw_amount;
             };
         }
