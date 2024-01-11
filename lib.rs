@@ -30,16 +30,17 @@ mod amm {
             let ratio = if self.l.is_zero() {
                 self.x = delta_x;
                 self.y = delta_x;
+
                 self.l = Liquidity::from_decimal(self.x.big_mul(self.y));
                 return Liquidity::from_decimal(self.x.big_mul(self.y));
             } else {
-                Ratio::from_decimal(delta_x).big_div_up(self.x)
+                Ratio::from_decimal(delta_x).big_div(self.x)
             };
 
-            self.x = (self.x) * (Ratio::from_integer(1) + ratio);
-            self.y = (self.y) * (Ratio::from_integer(1) + ratio);
-            self.l = self.l * (Ratio::from_integer(1) + ratio);
-
+            let alpha = Ratio::from_integer(1) + ratio;
+            self.x = self.x.big_mul_up(alpha);
+            self.y = self.y.big_mul_up(alpha);
+            self.l = self.l.big_mul(alpha * alpha);
             Liquidity::from_decimal(ratio * self.l)
         }
 
@@ -48,11 +49,11 @@ mod amm {
             let ratio = Ratio::from_decimal(delta_x).big_div(self.x);
 
             let alpha = Ratio::from_integer(1) - ratio;
-            self.x = self.x * alpha;
-            self.y = self.y * alpha;
-            self.l = self.l * (alpha * alpha);
+            self.x = self.x.big_mul(alpha);
+            self.y = self.y.big_mul(alpha);
+            self.l = self.l.big_mul_up(alpha * alpha);
 
-            Liquidity::from_decimal(ratio * self.l)
+            Liquidity::from_decimal_up(ratio * self.l)
         }
 
         #[ink(message)]
@@ -60,23 +61,23 @@ mod amm {
             if in_x {
                 self.x += amount;
                 let delta_x = TokenAmount::from_decimal_up(
-                    (Percentage::from_integer(1) - self.fee).big_mul(amount),
+                    (Percentage::from_integer(1) - self.fee).big_mul_up(amount),
                 );
-                let withdraw_amount = (amount * self.y).big_div_up(delta_x);
+                let withdraw_amount = delta_x.big_mul_up(self.y).big_div(self.x);
                 self.y -= withdraw_amount;
             } else {
                 self.y += amount;
                 let delta_y = TokenAmount::from_decimal_up(
-                    (TokenAmount::from_integer(1) - self.x).big_mul(amount),
+                    (Percentage::from_integer(1) - self.fee).big_mul_up(amount),
                 );
-                let withdraw_amount = (amount * self.x).big_div_up(delta_y);
+                let withdraw_amount = delta_y.big_mul_up(self.x).big_div(self.y);
                 self.x -= withdraw_amount;
             };
         }
 
         #[ink(message)]
         pub fn get_price(&self) -> Price {
-            Price::from_decimal(self.y.big_div(self.x))
+            Price::from_integer(1).big_mul(self.y).big_div(self.x)
         }
 
         #[ink(message)]
@@ -168,6 +169,43 @@ mod amm {
 
             let current_price = amm.get_price();
             assert_eq!(current_price, Price::from_integer(1));
+        }
+
+        #[ink::test]
+        fn swap() {
+            let fee = Percentage::new(0);
+            let mut amm = AMM::new(fee);
+
+            {
+                let amm_x = amm.get_x();
+                let amm_y = amm.get_y();
+                let amm_l = amm.get_l();
+                println!("x: {:?}, y: {:?}, l: {:?}", amm_x, amm_y, amm_l);
+            }
+
+            let delta_x = TokenAmount(100);
+            amm.add_liquidity(delta_x);
+
+            {
+                let amm_x = amm.get_x();
+                let amm_y = amm.get_y();
+                let amm_l = amm.get_l();
+                println!("x: {:?}, y: {:?}, l: {:?}", amm_x, amm_y, amm_l);
+            }
+
+            let current_price = amm.get_price();
+            assert_eq!(current_price, Price::from_integer(1));
+
+            let amount = TokenAmount(50);
+            amm.swap(amount, true);
+            {
+                let amm_x = amm.get_x();
+                let amm_y = amm.get_y();
+                let amm_l = amm.get_l();
+                println!("x: {:?}, y: {:?}, l: {:?}", amm_x, amm_y, amm_l);
+            }
+            let price = amm.get_price();
+            assert_eq!(price, Price::new(446666666666666666666666));
         }
     }
 }
